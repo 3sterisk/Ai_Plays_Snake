@@ -2,9 +2,20 @@ import pygame
 from random import randint
 from enum import Enum
 from collections import namedtuple
+import numpy as np
 
-from pygame import KEYDOWN
+pygame.font.init()
+Font = pygame.font.Font("Consolas.ttf", 25)
 
+#function to reset the game
+
+#reward system
+
+#change the play function play(keypress) -> direction calculate direction
+
+#game_iteration (current frame)
+
+#change in _is_collided function for ai to check collision happened or not
 
 class Direction(Enum):
     # These are Constants
@@ -14,13 +25,10 @@ class Direction(Enum):
     DOWN = 4
 
 
-pygame.font.init()
-Font = pygame.font.Font("Consolas.ttf", 25)
-
 Point = namedtuple('Point', ('x', 'y'))
 
 SNAKE_SIZE = 20
-SPEED = 10
+SPEED = 10000
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 BLUE1 = (0, 0, 255)
@@ -28,14 +36,17 @@ BLUE2 = (0, 100, 255)
 RED = (255, 0, 0)
 
 
-class SnakeGame:
+class SnakeGameAI:
     def __init__(self):
         pygame.init()  #Initializing the Pygame
-        self.width = 1000
+        self.width = 640
         self.height = 480
         self.display = pygame.display.set_mode((self.width, self.height))
         pygame.display.set_caption("Snake")
         self.clock = pygame.time.Clock()
+        self.reset()
+
+    def reset(self):
         self.direction = Direction.RIGHT
         self.snake_head = Point(self.width//2, self.height//2)
         self.snake = [self.snake_head, Point(self.snake_head.x-SNAKE_SIZE, self.snake_head.y), Point(self.snake_head.x-(2*SNAKE_SIZE), self.snake_head.y)]
@@ -43,6 +54,7 @@ class SnakeGame:
         self.score = 0
         self.food = None
         self._place_food()
+        self.current_iteration = 0
 
     def _place_food(self):
         x = randint(0, (self.width-SNAKE_SIZE) // SNAKE_SIZE) * SNAKE_SIZE
@@ -70,49 +82,70 @@ class SnakeGame:
             elif keypress == pygame.K_DOWN:
                 self.direction = Direction.DOWN
 
-    def _move_snake(self, direction):
+    def _move_snake(self, agent_action):
+        # [straight, right, left]
+
+        clock_wise = [Direction.RIGHT, Direction.DOWN, Direction.LEFT, Direction.UP]
+        current_dir_index = clock_wise.index(self.direction)
+        if np.array_equal(agent_action, [1, 0, 0]):
+            new_direction = clock_wise[current_dir_index] #no change
+        elif np.array_equal(agent_action, [0, 1, 0]):
+            new_current_dir_index = (current_dir_index + 1) % 4
+            new_direction = clock_wise[new_current_dir_index]
+        else:
+            new_current_dir_index = (current_dir_index - 1) % 4
+            new_direction = clock_wise[new_current_dir_index]
+
+        self.direction = new_direction
+
         x = self.snake_head.x
         y = self.snake_head.y
-        if direction == Direction.RIGHT:
+        if self.direction == Direction.RIGHT:
             x += SNAKE_SIZE
-        elif direction == Direction.LEFT:
+        elif self.direction == Direction.LEFT:
             x -= SNAKE_SIZE
-        elif direction == Direction.UP:
+        elif self.direction == Direction.UP:
             y -= SNAKE_SIZE
-        elif direction == Direction.DOWN:
+        elif self.direction == Direction.DOWN:
             y += SNAKE_SIZE
         self.snake_head = Point(x, y)
 
-    def play_step(self):
+    def play_step(self, agent_action):
+        self.current_iteration += 1
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 quit()
-            if event.type == pygame.KEYDOWN:
-                self.get_key(event.key)
-        self._move_snake(self.direction)
+
+        self._move_snake(agent_action)
         self.snake.insert(0, self.snake_head)
 
+        reward = 0
+
         game_over = False
-        if self._is_collided():
+        if self.is_collided() or self.current_iteration > 100*len(self.snake):
             game_over = True
-            return game_over, self.score
+            reward -= 10
+            return reward, game_over, self.score
         if self.snake_head == self.food:
             self.score += 1
+            reward += 10
             self._place_food()
         else:
             self.snake.pop()
         self._update_screen()
         self.clock.tick(SPEED)
 
-        return game_over, self.score
+        return reward, game_over, self.score
 
-    def _is_collided(self):
+    def is_collided(self, points=None):
+        if points is None:
+            points = self.snake_head
         #     Checking if the snake touches the boundary
-        if self.snake_head.x > self.width - SNAKE_SIZE or self.snake_head.x < 0 or self.snake_head.y > self.height - SNAKE_SIZE or self.snake_head.y < 0:
+        if points.x > self.width - SNAKE_SIZE or points.x < 0 or points.y > self.height - SNAKE_SIZE or points.y < 0:
             return True
         #     Checking if the snake touches its body
-        if self.snake_head in self.snake[1:]:
+        if points in self.snake[1:]:
             return True
 
         return False
@@ -123,7 +156,6 @@ class SnakeGame:
         for points in self.snake:
             pygame.draw.rect(self.display, BLUE1, pygame.Rect(points.x, points.y, SNAKE_SIZE, SNAKE_SIZE))
             pygame.draw.rect(self.display, BLUE2, pygame.Rect(points.x+4, points.y+4, 12, 12))
-            pass
         pygame.draw.rect(self.display, RED, pygame.Rect(self.food.x, self.food.y,SNAKE_SIZE, SNAKE_SIZE))
 
         text = Font.render("Score: " + str(self.score), True, WHITE)
@@ -131,15 +163,3 @@ class SnakeGame:
         pygame.display.flip()
 
 
-if __name__ == "__main__":
-    game = SnakeGame()
-
-    running = True
-    while running:
-        game_over, score = game.play_step()
-        if game_over:
-            running = False
-    print(f'Final score : {score}')
-
-    pygame.font.quit()
-    pygame.quit()
